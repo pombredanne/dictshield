@@ -37,6 +37,14 @@ def test_invalid_models_validate_partially():
     u.validate(partial=True)
 
 
+def test_model_with_rogue_field_throws_exception():
+    class User(Model):
+        name = StringType()
+
+    with pytest.raises(ModelConversionError):
+        User({'foo': 'bar'})
+
+
 def test_equality():
     class Player(Model):
         id = IntType()
@@ -212,7 +220,7 @@ def test_explicit_values_override_defaults():
 
 def test_good_options_args():
     mo = ModelOptions(klass=None, roles=None)
-    assert mo != None
+    assert mo is not None
 
     assert mo.roles == {}
 
@@ -231,11 +239,12 @@ def test_bad_options_args():
 def test_no_options_args():
     args = {}
     mo = ModelOptions(None, **args)
-    assert mo != None
+    assert mo is not None
 
 
 def test_options_parsing_from_model():
     class Foo(Model):
+
         class Options:
             namespace = 'foo'
             roles = {}
@@ -250,6 +259,7 @@ def test_options_parsing_from_model():
 
 def test_options_parsing_from_optionsclass():
     class FooOptions(ModelOptions):
+
         def __init__(self, klass, **kwargs):
             kwargs['namespace'] = kwargs.get('namespace') or 'foo'
             kwargs['roles'] = kwargs.get('roles') or {}
@@ -355,3 +365,197 @@ def test_model_field_validate_structure():
 
     with pytest.raises(ConversionError):
         Card({'user': [1, 2]})
+
+
+def test_model_deserialize_from_with_list():
+    class User(Model):
+        username = StringType(deserialize_from=['name', 'user'])
+
+    assert User({'name': 'Ryan'}).username == 'Ryan'
+    assert User({'user': 'Mike'}).username == 'Mike'
+    assert User({'username': 'Mark'}).username == 'Mark'
+    assert User({
+        "username": "Mark",
+        "name": "Second-class",
+        "user": "key"
+    }).username == 'Mark'
+
+
+def test_model_deserialize_from_with_string():
+    class User(Model):
+        username = StringType(deserialize_from='name')
+
+    assert User({'name': 'Mike'}).username == 'Mike'
+    assert User({'username': 'Mark'}).username == 'Mark'
+    assert User({'username': 'Mark', "name": "Second-class field"}).username == 'Mark'
+
+
+def test_model_import_with_deserialize_mapping():
+    class User(Model):
+        username = StringType()
+
+    mapping = {
+        "username": ['name', 'user'],
+    }
+
+    assert User({'name': 'Ryan'}, deserialize_mapping=mapping).username == 'Ryan'
+    assert User({'user': 'Mike'}, deserialize_mapping=mapping).username == 'Mike'
+    assert User({'username': 'Mark'}, deserialize_mapping=mapping).username == 'Mark'
+    assert User({'username': 'Mark', "name": "Second-class", "user": "key"},
+                deserialize_mapping=mapping).username == 'Mark'
+
+
+def test_model_import_data_with_mapping():
+    class User(Model):
+        username = StringType()
+
+    mapping = {
+        "username": ['name', 'user'],
+    }
+
+    user = User()
+    user.import_data({'name': 'Ryan'}, mapping=mapping)
+    assert user.username == 'Ryan'
+
+
+def test_nested_model_import_data_with_mappings():
+    class Nested(Model):
+        nested_attr = StringType()
+
+    class Root(Model):
+        root_attr = StringType()
+        nxt_level = ModelType(Nested)
+
+    mapping = {
+        'root_attr': ['attr'],
+        'nxt_level': ['next'],
+        'model_mapping': {
+            'nxt_level': {
+                'nested_attr': ['attr'],
+            },
+        },
+    }
+
+    root = Root()
+    root.import_data({
+        "attr": "root value",
+        "next": {
+            "attr": "nested value",
+        },
+    }, mapping=mapping)
+
+    assert root.root_attr == 'root value'
+    assert root.nxt_level.nested_attr == 'nested value'
+
+    root = Root({
+        "attr": "root value",
+        "next": {
+            "attr": "nested value",
+        },
+    }, deserialize_mapping=mapping)
+
+    assert root.root_attr == 'root value'
+    assert root.nxt_level.nested_attr == 'nested value'
+
+
+def test_fielddescriptor_connectedness():
+    class TestModel(Model):
+        field1 = StringType()
+        field2 = StringType()
+
+    inst = TestModel()
+    inst._data = {}
+    with pytest.raises(AttributeError):
+        inst.field1
+
+    inst = TestModel()
+    del inst._fields['field1']
+    with pytest.raises(AttributeError):
+        del inst.field1
+
+    del inst.field2
+
+
+def test_keys():
+    class TestModel(Model):
+        field1 = StringType()
+        field2 = StringType()
+
+    inst = TestModel({'field1': 'foo', 'field2': 'bar'})
+
+    assert inst.keys() == ['field1', 'field2']
+
+
+def test_values():
+    class TestModel(Model):
+        field1 = StringType()
+        field2 = StringType()
+
+    inst = TestModel({'field1': 'foo', 'field2': 'bar'})
+
+    assert inst.values() == ['foo', 'bar']
+
+
+def test_items():
+    class TestModel(Model):
+        field1 = StringType()
+        field2 = StringType()
+
+    inst = TestModel({'field1': 'foo', 'field2': 'bar'})
+
+    assert inst.items() == [('field1', 'foo'), ('field2', 'bar')]
+
+
+def test_get():
+    class TestModel(Model):
+        field1 = StringType()
+
+    inst = TestModel({'field1': 'foo'})
+    assert inst.get('field1') == 'foo'
+    assert inst.get('foo') is None
+    assert inst.get('foo', 'bar') == 'bar'
+
+
+def test_setitem():
+    class TestModel(Model):
+        field1 = StringType()
+
+    inst = TestModel()
+
+    with pytest.raises(KeyError):
+        inst['foo'] = 1
+
+    inst['field1'] = 'foo'
+    assert inst.field1 == 'foo'
+
+
+def test_delitem():
+    class TestModel(Model):
+        field1 = StringType()
+
+    inst = TestModel({'field1': 'foo'})
+
+    with pytest.raises(KeyError):
+        del inst['foo']
+
+    del inst['field1']
+    assert inst.field1 is None
+
+
+def test_eq():
+    class TestModel(Model):
+        field1 = StringType()
+
+    inst = TestModel({'field1': 'foo'})
+    assert inst != 'foo'
+
+
+def test_repr():
+    class TestModel(Model):
+        field1 = StringType()
+
+    inst = TestModel({'field1': 'foo'})
+    assert repr(inst) == '<TestModel: TestModel object>'
+
+    inst.__class__.__name__ = '\x80'
+    assert repr(inst) == '<[Bad Unicode class name]: [Bad Unicode data]>'

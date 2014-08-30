@@ -4,9 +4,13 @@ Schematics
 
 .. rubric:: Python Data Structures for Humans™.
 
-.. image:: https://secure.travis-ci.org/j2labs/schematics.png?branch=master
-  :target: https://secure.travis-ci.org/j2labs/schematics
+.. image:: https://secure.travis-ci.org/schematics/schematics.png?branch=master
+  :target: https://secure.travis-ci.org/schematics/schematics
   :alt: Build Status
+
+.. image:: https://coveralls.io/repos/schematics/schematics/badge.png
+  :target: https://coveralls.io/r/schematics/schematics
+  :alt: Coverage
 
 **For more information, please see our documentation:** http://schematics.readthedocs.org/en/latest/
 
@@ -98,3 +102,11 @@ was renamed Schematics.
 
 DictShield still exists, but consider anything with that label to be
 a ghost from this project's early years.
+
+Testing & Coverage support
+==========================
+Run coverage and check the missing statements.
+
+::
+
+  $ `coverage run --source schematics -m py.test && coverage report`

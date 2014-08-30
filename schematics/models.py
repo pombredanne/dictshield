@@ -1,12 +1,11 @@
 # encoding=utf-8
 
 import inspect
-import itertools
 
 from .types import BaseType
 from .types.compound import ModelType
 from .types.serializable import Serializable
-from .exceptions import BaseError, ModelValidationError
+from .exceptions import BaseError, ModelValidationError, MockCreationError
 from .transforms import allow_none, atoms, flatten, expand
 from .transforms import to_primitive, to_native, convert
 from .validate import validate
@@ -14,6 +13,7 @@ from .datastructures import OrderedDict as OrderedDictWithSort
 
 
 class FieldDescriptor(object):
+
     """
     The FieldDescriptor serves as a wrapper for Types that converts them into
     fields.
@@ -61,11 +61,13 @@ class FieldDescriptor(object):
 
 
 class ModelOptions(object):
+
     """
     This class is a container for all metaclass configuration options. Its
     primary purpose is to create an instance of a model's options for every
     instance of a model.
     """
+
     def __init__(self, klass, namespace=None, roles=None,
                  serialize_when_none=True):
         """
@@ -87,30 +89,31 @@ class ModelOptions(object):
 
 
 class ModelMeta(type):
+
     """
     Meta class for Models.
     """
 
-    def __new__(cls, name, bases, attrs):
+    def __new__(mcs, name, bases, attrs):
         """
-        This metaclass adds four attributes to host classes: cls._fields,
-        cls._serializables, cls._validator_functions, and cls._options.
+        This metaclass adds four attributes to host classes: mcs._fields,
+        mcs._serializables, mcs._validator_functions, and mcs._options.
 
         This function creates those attributes like this:
 
-        ``cls._fields`` is list of fields that are schematics types
-        ``cls._serializables`` is a list of functions that are used to generate
+        ``mcs._fields`` is list of fields that are schematics types
+        ``mcs._serializables`` is a list of functions that are used to generate
         values during serialization
-        ``cls._validator_functions`` are class level validation functions
-        ``cls._options`` is the end result of parsing the ``Options`` class
+        ``mcs._validator_functions`` are class level validation functions
+        ``mcs._options`` is the end result of parsing the ``Options`` class
         """
 
-        ### Structures used to accumulate meta info
+        # Structures used to accumulate meta info
         fields = OrderedDictWithSort()
         serializables = {}
         validator_functions = {}  # Model level
 
-        ### Accumulate metas info from parent classes
+        # Accumulate metas info from parent classes
         for base in reversed(bases):
             if hasattr(base, '_fields'):
                 fields.update(base._fields)
@@ -119,7 +122,7 @@ class ModelMeta(type):
             if hasattr(base, '_validator_functions'):
                 validator_functions.update(base._validator_functions)
 
-        ### Parse this class's attributes into meta structures
+        # Parse this class's attributes into meta structures
         for key, value in attrs.iteritems():
             if key.startswith('validate_') and callable(value):
                 validator_functions[key[9:]] = value
@@ -128,30 +131,30 @@ class ModelMeta(type):
             if isinstance(value, Serializable):
                 serializables[key] = value
 
-        ### Parse meta options
-        options = cls._read_options(name, bases, attrs)
+        # Parse meta options
+        options = mcs._read_options(name, bases, attrs)
 
-        ### Convert list of types into fields for new klass
+        # Convert list of types into fields for new klass
         fields.sort(key=lambda i: i[1]._position_hint)
         for key, field in fields.iteritems():
             attrs[key] = FieldDescriptor(key)
 
-        ### Ready meta data to be klass attributes
+        # Ready meta data to be klass attributes
         attrs['_fields'] = fields
         attrs['_serializables'] = serializables
         attrs['_validator_functions'] = validator_functions
         attrs['_options'] = options
 
-        klass = type.__new__(cls, name, bases, attrs)
+        klass = type.__new__(mcs, name, bases, attrs)
 
-        ### Add reference to klass to each field instance
+        # Add reference to klass to each field instance
         for field in fields.values():
             field.owner_model = klass
 
         return klass
 
     @classmethod
-    def _read_options(cls, name, bases, attrs):
+    def _read_options(mcs, name, bases, attrs):
         """
         Parses `ModelOptions` instance into the options value attached to
         `Model` instances.
@@ -160,36 +163,38 @@ class ModelMeta(type):
 
         for base in reversed(bases):
             if hasattr(base, "_options"):
-                for k, v in inspect.getmembers(base._options):
-                    if not k.startswith("_") and not k == "klass":
-                        options_members[k] = v
+                for key, value in inspect.getmembers(base._options):
+                    if not key.startswith("_") and not key == "klass":
+                        options_members[key] = value
 
         options_class = attrs.get('__optionsclass__', ModelOptions)
         if 'Options' in attrs:
-            for k, v in inspect.getmembers(attrs['Options']):
-                if not k.startswith("_"):
-                    if k == "roles":
+            for key, value in inspect.getmembers(attrs['Options']):
+                if not key.startswith("_"):
+                    if key == "roles":
                         roles = options_members.get("roles", {}).copy()
-                        roles.update(v)
+                        roles.update(value)
 
                         options_members["roles"] = roles
                     else:
-                        options_members[k] = v
+                        options_members[key] = value
 
-        return options_class(cls, **options_members)
+        return options_class(mcs, **options_members)
 
     @property
     def fields(cls):
         return cls._fields
 
-    def __iter__(self):
-        return itertools.chain(
-            self._unbound_fields.iteritems(),
-            self._unbound_serializables.iteritems()
-        )
+#   def __iter__(self):
+#       return itertools.chain(
+#           self.fields.iteritems(),
+#           self._unbound_fields.iteritems(),
+#           self._unbound_serializables.iteritems()
+#       )
 
 
 class Model(object):
+
     """
     Enclosure for fields and validation. Same pattern deployed by Django
     models, SQLAlchemy declarative extension and other developer friendly
@@ -203,11 +208,11 @@ class Model(object):
     __metaclass__ = ModelMeta
     __optionsclass__ = ModelOptions
 
-    def __init__(self, raw_data=None):  # TODO change back to keywords
+    def __init__(self, raw_data=None, deserialize_mapping=None, strict=True):
         if raw_data is None:
             raw_data = {}
         self._initial = raw_data
-        self._data = self.convert(raw_data, strict=True)
+        self._data = self.convert(raw_data, strict=strict, mapping=deserialize_mapping)
 
     def validate(self, partial=False, strict=False):
         """
@@ -226,8 +231,23 @@ class Model(object):
             data = validate(self.__class__, self._data, partial=partial,
                             strict=strict)
             self._data.update(**data)
-        except BaseError as e:
-            raise ModelValidationError(e.messages)
+        except BaseError as exc:
+            raise ModelValidationError(exc.messages)
+
+    def import_data(self, raw_data, **kw):
+        """
+        Converts and imports the raw data into the instance of the model
+        according to the fields in the model.
+
+        :param raw_data:
+            The data to be imported.
+        """
+        data = self.convert(raw_data, **kw)
+        for k in data.keys():
+            if data[k] is None:
+                del data[k]
+        self._data.update(data)
+        return self
 
     def convert(self, raw_data, **kw):
         """
@@ -239,10 +259,10 @@ class Model(object):
         """
         return convert(self.__class__, raw_data, **kw)
 
-    def to_native(self, role=None):
-        return to_native(self.__class__, self, role=role)
+    def to_native(self, role=None, context=None):
+        return to_native(self.__class__, self, role=role, context=context)
 
-    def to_primitive(self, role=None):
+    def to_primitive(self, role=None, context=None):
         """Return data as it would be validated. No filtering of output unless
         role is defined.
 
@@ -250,10 +270,10 @@ class Model(object):
             Filter output by a specific role
 
         """
-        return to_primitive(self.__class__, self, role=role)
+        return to_primitive(self.__class__, self, role=role, context=context)
 
-    def serialize(self, role=None):
-        return self.to_primitive(role=role)
+    def serialize(self, role=None, context=None):
+        return self.to_primitive(role=role, context=context)
 
     def flatten(self, role=None, prefix=""):
         """
@@ -310,6 +330,20 @@ class Model(object):
         except KeyError:
             return default
 
+    @classmethod
+    def get_mock_object(cls, context=None, overrides=None):
+        if overrides is None:
+            overrides = {}
+        values = {}
+        for name, field in cls.fields.items():
+            if name not in overrides:
+                try:
+                    values[name] = field.mock(context)
+                except MockCreationError as exc:
+                    raise MockCreationError('%s: %s' % (name, exc.message))
+        values.update(overrides)
+        return cls(values)
+
     def __getitem__(self, name):
         try:
             return getattr(self, name)
@@ -321,6 +355,11 @@ class Model(object):
         if name not in self._data:
             raise KeyError(name)
         return setattr(self, name, value)
+
+    def __delitem__(self, name):
+        if name not in self._data:
+            raise KeyError(name)
+        return setattr(self, name, None)
 
     def __contains__(self, name):
         return name in self._data or name in self._serializables
@@ -341,10 +380,16 @@ class Model(object):
 
     def __repr__(self):
         try:
-            u = unicode(self)
+            obj = unicode(self)
         except (UnicodeEncodeError, UnicodeDecodeError):
-            u = '[Bad Unicode data]'
-        return u"<%s: %s>" % (self.__class__.__name__, u)
+            obj = '[Bad Unicode data]'
+
+        try:
+            class_name = unicode(self.__class__.__name__)
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            class_name = '[Bad Unicode class name]'
+
+        return u"<%s: %s>" % (class_name, obj)
 
     def __unicode__(self):
         return '%s object' % self.__class__.__name__

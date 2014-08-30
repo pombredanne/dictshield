@@ -1,6 +1,5 @@
 from .exceptions import BaseError, ValidationError, ModelConversionError
-from .exceptions import ModelValidationError
-from transforms import import_loop
+from .transforms import import_loop
 
 
 def validate(cls, instance_or_dict, partial=False, strict=False, context=None):
@@ -30,31 +29,30 @@ def validate(cls, instance_or_dict, partial=False, strict=False, context=None):
     data = {}
     errors = {}
 
-    ### Function for validating an individual field
+    # Function for validating an individual field
     def field_converter(field, value):
         value = field.to_native(value)
         field.validate(value)
         return value
 
-    ### Loop across fields and coerce values
+    # Loop across fields and coerce values
     try:
         data = import_loop(cls, instance_or_dict, field_converter,
                            context=context, partial=partial, strict=strict)
     except ModelConversionError as mce:
         errors = mce.messages
 
-    ### Check if unknown fields are present
+    # Check if unknown fields are present
     if strict:
         rogue_field_errors = _check_for_unknown_fields(cls, data)
         errors.update(rogue_field_errors)
 
-    ### Model level validation
+    # Model level validation
     instance_errors = _validate_model(cls, data)
     errors.update(instance_errors)
 
-    if len(errors) > 0:
-        ve = ValidationError(errors)
-        raise ve
+    if errors:
+        raise ValidationError(errors)
 
     return data
 
@@ -77,13 +75,11 @@ def _validate_model(cls, data):
         if field_name in cls._validator_functions:
             try:
                 context = data
-                if hasattr(cls, '_data'):
-                    context = dict(cls._data, **data)
                 cls._validator_functions[field_name](cls, context, value)
-            except BaseError as e:
+            except BaseError as exc:
                 field = cls._fields[field_name]
                 serialized_field_name = field.serialized_name or field_name
-                errors[serialized_field_name] = e.messages
+                errors[serialized_field_name] = exc.messages
                 data.pop(field_name, None)  # get rid of the invalid field
     return errors
 

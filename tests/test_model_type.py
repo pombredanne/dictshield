@@ -14,6 +14,10 @@ def test_simple_embedded_models():
         id = IntType()
         location = ModelType(Location)
 
+    r = repr(Player.location)
+    assert r.startswith("<schematics.types.compound.ModelType object at 0x")
+    assert r.endswith("for <class 'tests.test_model_type.Location'>>")
+
     p = Player(dict(id=1, location={"country_code": "US"}))
 
     assert p.id == 1
@@ -23,6 +27,8 @@ def test_simple_embedded_models():
 
     assert isinstance(p.location, Location)
     assert p.location.country_code == "IS"
+
+    assert Player.location.to_native(None) is None
 
 
 def test_simple_embedded_models_is_none():
@@ -125,3 +131,25 @@ def test_default_value_when_embedded_model():
 
     assert pack.question.question_id == "1"
     assert pack.question.type == "text"
+
+
+def test_export_loop_with_subclassed_model():
+    class Asset(Model):
+        file_name = StringType()
+
+    class S3Asset(Asset):
+        bucket_name = StringType()
+
+    class Product(Model):
+        title = StringType()
+        asset = ModelType(Asset)
+
+    asset = S3Asset({'bucket_name': 'assets_bucket', 'file_name': 'bar'})
+
+    product = Product({'title': 'baz', 'asset': asset})
+
+    primitive = product.to_primitive()
+    assert 'bucket_name' in primitive['asset']
+
+    native = product.to_native()
+    assert 'bucket_name' in native['asset']
