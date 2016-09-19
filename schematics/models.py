@@ -1,13 +1,14 @@
 # encoding=utf-8
 
+from copy import deepcopy
 import inspect
+import sys
 
 from six import iteritems
 from six import iterkeys
 from six import add_metaclass
 
 from .types import BaseType
-from .types.compound import ModelType
 from .types.serializable import Serializable
 from .exceptions import BaseError, ModelValidationError, MockCreationError
 from .transforms import allow_none, atoms, flatten, expand
@@ -20,6 +21,12 @@ try:
 except:
     import codecs
     unicode = str #PY3
+
+if sys.version_info[0] >= 3 or sys.version_info[1] >= 7:
+    metacopy = deepcopy
+else:
+    metacopy = lambda x: x
+
 
 class FieldDescriptor(object):
 
@@ -55,7 +62,10 @@ class FieldDescriptor(object):
         Checks the field name against a model and sets the value.
         """
         field = instance._fields[self.name]
-        if not isinstance(value, Model) and isinstance(field, ModelType):
+        if all((
+                value is not None,
+                not isinstance(value, Model),
+                isinstance(field, ModelType))):
             value = field.model_class(value)
         instance._data[self.name] = value
 
@@ -78,7 +88,7 @@ class ModelOptions(object):
     """
 
     def __init__(self, klass, namespace=None, roles=None,
-                 serialize_when_none=True):
+                 serialize_when_none=True, fields_order=None):
         """
         :param klass:
             The class which this options instance belongs to.
@@ -90,11 +100,15 @@ class ModelOptions(object):
         :param serialize_when_none:
             When ``False``, serialization skips fields that are None.
             Default: ``True``
+        :param fields_order:
+            List of field names that dictates in which order will keys
+            appear in serialized dictionary.
         """
         self.klass = klass
         self.namespace = namespace
         self.roles = roles or {}
         self.serialize_when_none = serialize_when_none
+        self.fields_order = fields_order
 
 
 class ModelMeta(type):
@@ -125,9 +139,9 @@ class ModelMeta(type):
         # Accumulate metas info from parent classes
         for base in reversed(bases):
             if hasattr(base, '_fields'):
-                fields.update(base._fields)
+                fields.update(metacopy(base._fields))
             if hasattr(base, '_serializables'):
-                serializables.update(base._serializables)
+                serializables.update(metacopy(base._serializables))
             if hasattr(base, '_validator_functions'):
                 validator_functions.update(base._validator_functions)
 
@@ -157,8 +171,19 @@ class ModelMeta(type):
         klass = type.__new__(mcs, name, bases, attrs)
 
         # Add reference to klass to each field instance
-        for field in fields.values():
+        def set_owner_model(field, klass):
             field.owner_model = klass
+            if hasattr(field, 'field'):
+                set_owner_model(field.field, klass)
+        for field_name, field in fields.items():
+            set_owner_model(field, klass)
+            field.name = field_name
+
+        # Register class on ancestor models
+        klass._subclasses = []
+        for base in klass.__mro__[1:]:
+            if isinstance(base, ModelMeta):
+                base._subclasses.append(klass)
 
         return klass
 
@@ -194,12 +219,6 @@ class ModelMeta(type):
     def fields(cls):
         return cls._fields
 
-#   def __iter__(self):
-#       return itertools.chain(
-#           self.fields.iteritems(),
-#           self._unbound_fields.iteritems(),
-#           self._unbound_serializables.iteritems()
-#       )
 
 @add_metaclass(ModelMeta)
 class Model(object):
@@ -214,7 +233,6 @@ class Model(object):
     possible to convert the raw data into richer Python constructs.
     """
 
-    #__metaclass__ = ModelMeta
     __optionsclass__ = ModelOptions
 
     def __init__(self, raw_data=None, deserialize_mapping=None, strict=True):
@@ -343,6 +361,11 @@ class Model(object):
 
     @classmethod
     def get_mock_object(cls, context=None, overrides=None):
+        """Get a mock object.
+
+        :param dict context:
+        :param dict overrides: overrides for the model
+        """
         if overrides is None:
             overrides = {}
         values = {}
@@ -384,7 +407,7 @@ class Model(object):
                 if self.get(k) != other.get(k):
                     return False
             return True
-        return False
+        return NotImplemented
 
     def __ne__(self, other):
         return not self == other
@@ -403,7 +426,10 @@ class Model(object):
         return u"<%s: %s>" % (class_name, obj)
 
     def __str__(self):
-        return '%s object' % self.__class__.__name__        
+        return '%s object' % self.__class__.__name__
 
     def __unicode__(self):
         return '%s object' % self.__class__.__name__
+
+
+from .types.compound import ModelType

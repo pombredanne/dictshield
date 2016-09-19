@@ -116,6 +116,26 @@ def test_serializable_with_model():
     assert d == {"total_points": 2, "xp_level": {"level": 4, "title": "Best"}}
 
 
+def test_serializable_with_model_to_native():
+    class ExperienceLevel(Model):
+        level = IntType()
+        title = StringType()
+
+    class Player(Model):
+        total_points = IntType()
+
+        @serializable(type=ModelType(ExperienceLevel))
+        def xp_level(self):
+            return ExperienceLevel(dict(level=self.total_points * 2, title="Best"))
+
+    player = Player({"total_points": 2})
+
+    assert player.xp_level.level == 4
+
+    d = player.to_native()
+    assert d == {"total_points": 2, "xp_level": {"level": 4, "title": "Best"}}
+
+
 def test_serializable_with_model_when_None():
     class ExperienceLevel(Model):
         level = IntType()
@@ -346,6 +366,26 @@ def test_field_with_serialize_when_none():
         "question": "Who's the man?",
         "resources": {"A": "B"}
     }
+
+
+def test_field_with_serialize_when_none_on_outer_only():
+    class M(Model):
+        listfield = ListType(StringType(serialize_when_none=True), serialize_when_none=False)
+        dictfield = DictType(StringType(serialize_when_none=True), serialize_when_none=False)
+    obj = M()
+    obj.listfield = [None]
+    obj.dictfield = {'foo': None}
+    assert obj.serialize() == {'listfield': [None], 'dictfield': {'foo': None}}
+
+
+def test_field_with_serialize_when_none_on_inner_only():
+    class M(Model):
+        listfield = ListType(StringType(serialize_when_none=False), serialize_when_none=True)
+        dictfield = DictType(StringType(serialize_when_none=False), serialize_when_none=True)
+    obj = M()
+    obj.listfield = [None]
+    obj.dictfield = {'foo': None}
+    assert obj.serialize() == {'listfield': [], 'dictfield': {}}
 
 
 def test_set_serialize_when_none_on_whole_model():
