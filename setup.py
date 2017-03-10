@@ -26,10 +26,10 @@ tests_require = open(
     os.path.join(os.path.dirname(__file__), 'requirements.txt')).read().split()
 
 setup(
-    name='schematics',
+    name='schematics-patched',
     license='BSD',
     version=__version__,
-    description='Structured Data for Humans',
+    description='A aptched version of schematics 1.1.1 that can pickle with multiprocessing',
     author=u'James Dennis, Jökull Sólberg, Jóhann Þorvaldur Bergþórsson',
     author_email='jdennis@gmail.com, jokull@plainvanillagames.com, johann@plainvanillagames.com',
     url='http://github.com/schematics/schematics',
