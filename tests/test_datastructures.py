@@ -87,16 +87,16 @@ def test_od_pop():
 def test_od_popitem():
     od = OrderedDict([('a', 'b'), ('c', 'd'), ('foo', 'bar')])
 
-    assert od.popitem() == ('a', 'b')
-    assert 'a' not in od
-    assert od.keys() == ['c', 'foo']
+    assert od.popitem() == ('foo', 'bar')
+    assert 'foo' not in od
+    assert od.keys() == ['a', 'c']
 
     assert od.popitem() == ('c', 'd')
     assert 'c' not in od
-    assert od.keys() == ['foo']
+    assert od.keys() == ['a']
 
-    assert od.popitem() == ('foo', 'bar')
-    assert 'foo' not in od
+    assert od.popitem() == ('a', 'b')
+    assert 'a' not in od
     assert od.keys() == []
 
     with pytest.raises(KeyError):
