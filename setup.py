@@ -32,7 +32,7 @@ setup(
     description='A aptched version of schematics 1.1.1 that can pickle with multiprocessing',
     author=u'James Dennis, Jökull Sólberg, Jóhann Þorvaldur Bergþórsson',
     author_email='jdennis@gmail.com, jokull@plainvanillagames.com, johann@plainvanillagames.com',
-    url='http://github.com/schematics/schematics',
+    url='http://github.com/pombredanne/schematics',
     packages=['schematics', 'schematics.types', 'schematics.contrib'],
     classifiers=[
         'Environment :: Other Environment',
